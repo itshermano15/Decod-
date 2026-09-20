@@ -36,6 +36,13 @@ const esc = (s) =>
     "'": '&#39;'
   }[c]));
 
+function saveCart() {
+  localStorage.setItem(
+    'decodo_cart',
+    JSON.stringify(cart)
+  );
+}
+
 async function load() {
   const { data, error } = await db
     .from('products')
@@ -46,11 +53,32 @@ async function load() {
 
   if (error) {
     console.error('Error cargando productos:', error);
-    productsEl.textContent = 'No se pudieron cargar los productos.';
+    productsEl.textContent =
+      'No se pudieron cargar los productos.';
     return;
   }
 
   products = data || [];
+
+  // Eliminar del carrito productos que ya no existen
+  // o que se han quedado sin stock.
+  cart = cart.filter((item) => {
+    const product = products.find(
+      (p) => p.id === item.id
+    );
+
+    if (!product) return false;
+
+    item.qty = Math.min(
+      Number(item.qty),
+      Number(product.stock)
+    );
+
+    return item.qty > 0;
+  });
+
+  saveCart();
+
   render();
   renderCart();
 }
@@ -67,68 +95,257 @@ function render() {
   productsEl.innerHTML =
     filtered.map((p) => `
       <article class="card">
-        <img src="${p.image_url || 'https://placehold.co/700x700?text=Decodo'}">
+        <img
+          src="${p.image_url || 'https://placehold.co/700x700?text=Decodo'}"
+          alt="${esc(p.name)}"
+        >
+
         <div>
           <small>${esc(p.category)}</small>
+
           <h3>${esc(p.name)}</h3>
+
           <p>${esc(p.description)}</p>
+
           <b>${euro(p.price_cents / 100)}</b>
+
           <br>
-          <button class="cta" data-id="${p.id}">Añadir</button>
+
+          <button
+            class="cta"
+            data-add="${p.id}"
+          >
+            Añadir al carrito
+          </button>
         </div>
       </article>
     `).join('') || '<p>No hay productos.</p>';
 
-  document.querySelectorAll('[data-id]').forEach((button) => {
-    button.onclick = () => add(button.dataset.id);
-  });
+  document.querySelectorAll('[data-add]').forEach(
+    (button) => {
+      button.onclick = () =>
+        add(button.dataset.add);
+    }
+  );
 }
 
 function add(id) {
-  const product = products.find((p) => p.id === id);
+  const product = products.find(
+    (p) => p.id === id
+  );
+
   if (!product) return;
 
-  const existing = cart.find((x) => x.id === id);
+  const existing = cart.find(
+    (x) => x.id === id
+  );
 
   if (existing) {
-    existing.qty = Math.min(existing.qty + 1, product.stock);
+    if (existing.qty >= product.stock) {
+      notice.textContent =
+        'No hay más unidades disponibles.';
+      openCart();
+      return;
+    }
+
+    existing.qty += 1;
   } else {
-    cart.push({ id, qty: 1 });
+    cart.push({
+      id,
+      qty: 1
+    });
   }
 
-  localStorage.setItem('decodo_cart', JSON.stringify(cart));
+  saveCart();
   renderCart();
   openCart();
 }
 
+function increase(id) {
+  const product = products.find(
+    (p) => p.id === id
+  );
+
+  const item = cart.find(
+    (x) => x.id === id
+  );
+
+  if (!product || !item) return;
+
+  if (item.qty >= product.stock) {
+    notice.textContent =
+      'Has alcanzado el stock disponible.';
+    return;
+  }
+
+  item.qty += 1;
+
+  saveCart();
+  renderCart();
+}
+
+function decrease(id) {
+  const item = cart.find(
+    (x) => x.id === id
+  );
+
+  if (!item) return;
+
+  item.qty -= 1;
+
+  if (item.qty <= 0) {
+    cart = cart.filter(
+      (x) => x.id !== id
+    );
+  }
+
+  saveCart();
+  renderCart();
+}
+
+function removeItem(id) {
+  cart = cart.filter(
+    (x) => x.id !== id
+  );
+
+  saveCart();
+  renderCart();
+}
+
 function renderCart() {
-  cartCount.textContent = cart.reduce(
-    (sum, item) => sum + item.qty,
+  const count = cart.reduce(
+    (sum, item) =>
+      sum + Number(item.qty),
     0
   );
 
-  items.innerHTML =
-    cart.map((item) => {
-      const product = products.find((p) => p.id === item.id);
+  cartCount.textContent = count;
 
-      if (!product) return '';
+  if (!cart.length) {
+    items.innerHTML =
+      '<p>Tu carrito está vacío.</p>';
 
-      return `
-        <div class="row">
-          <span>${esc(product.name)} × ${item.qty}</span>
-          <b>${euro(
-            (product.price_cents * item.qty) / 100
-          )}</b>
+    total.textContent = euro(0);
+
+    return;
+  }
+
+  items.innerHTML = cart.map((item) => {
+    const product = products.find(
+      (p) => p.id === item.id
+    );
+
+    if (!product) return '';
+
+    const subtotal =
+      Number(product.price_cents) *
+      Number(item.qty);
+
+    return `
+      <div class="cart-item">
+
+        <div class="cart-product">
+
+          <img
+            src="${
+              product.image_url ||
+              'https://placehold.co/80x80?text=Decodo'
+            }"
+            alt="${esc(product.name)}"
+          >
+
+          <div>
+            <strong>
+              ${esc(product.name)}
+            </strong>
+
+            <small>
+              ${euro(product.price_cents / 100)}
+              / unidad
+            </small>
+          </div>
+
         </div>
-      `;
-    }).join('') || '<p>Carrito vacío.</p>';
 
-  const cartTotal = cart.reduce((sum, item) => {
-    const product = products.find((p) => p.id === item.id);
-    return sum + (product?.price_cents || 0) * item.qty;
-  }, 0);
+        <div class="cart-controls">
 
-  total.textContent = euro(cartTotal / 100);
+          <button
+            type="button"
+            data-minus="${product.id}"
+          >
+            −
+          </button>
+
+          <span>
+            ${item.qty}
+          </span>
+
+          <button
+            type="button"
+            data-plus="${product.id}"
+          >
+            +
+          </button>
+
+        </div>
+
+        <strong>
+          ${euro(subtotal / 100)}
+        </strong>
+
+        <button
+          type="button"
+          class="remove-item"
+          data-remove="${product.id}"
+          aria-label="Eliminar producto"
+        >
+          🗑️
+        </button>
+
+      </div>
+    `;
+  }).join('');
+
+  const cartTotal = cart.reduce(
+    (sum, item) => {
+      const product = products.find(
+        (p) => p.id === item.id
+      );
+
+      if (!product) return sum;
+
+      return (
+        sum +
+        Number(product.price_cents) *
+        Number(item.qty)
+      );
+    },
+    0
+  );
+
+  total.textContent =
+    euro(cartTotal / 100);
+
+  document
+    .querySelectorAll('[data-plus]')
+    .forEach((button) => {
+      button.onclick = () =>
+        increase(button.dataset.plus);
+    });
+
+  document
+    .querySelectorAll('[data-minus]')
+    .forEach((button) => {
+      button.onclick = () =>
+        decrease(button.dataset.minus);
+    });
+
+  document
+    .querySelectorAll('[data-remove]')
+    .forEach((button) => {
+      button.onclick = () =>
+        removeItem(button.dataset.remove);
+    });
 }
 
 function openCart() {
@@ -144,10 +361,18 @@ function closeCart() {
 cartBtn.onclick = openCart;
 closeBtn.onclick = closeCart;
 shade.onclick = closeCart;
+
 search.oninput = render;
 
 checkout.onclick = () => {
-  notice.textContent = 'Stripe se añadirá en la siguiente fase.';
+  if (!cart.length) {
+    notice.textContent =
+      'Tu carrito está vacío.';
+    return;
+  }
+
+  notice.textContent =
+    'El pago con Stripe se conectará en el siguiente paso.';
 };
 
 load();
