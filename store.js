@@ -364,15 +364,47 @@ shade.onclick = closeCart;
 
 search.oninput = render;
 
-checkout.onclick = () => {
+const checkoutState = new URLSearchParams(window.location.search).get('checkout');
+
+if (checkoutState === 'success') {
+  cart = [];
+  saveCart();
+  notice.textContent = 'Pago realizado correctamente. Gracias por tu compra.';
+  history.replaceState({}, '', window.location.pathname);
+} else if (checkoutState === 'cancelled') {
+  notice.textContent = 'El pago se ha cancelado. Tu carrito sigue guardado.';
+  history.replaceState({}, '', window.location.pathname);
+}
+
+checkout.onclick = async () => {
   if (!cart.length) {
-    notice.textContent =
-      'Tu carrito está vacío.';
+    notice.textContent = 'Tu carrito está vacío.';
     return;
   }
 
-  notice.textContent =
-    'El pago con Stripe se conectará en el siguiente paso.';
+  checkout.disabled = true;
+  const label = checkout.textContent;
+  checkout.textContent = 'Preparando pago…';
+  notice.textContent = '';
+
+  try {
+    const response = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: cart })
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.url) {
+      throw new Error(data.error || 'No se pudo iniciar el pago.');
+    }
+
+    window.location.assign(data.url);
+  } catch (error) {
+    notice.textContent = error.message || 'No se pudo iniciar el pago.';
+    checkout.disabled = false;
+    checkout.textContent = label;
+  }
 };
 
 load();
