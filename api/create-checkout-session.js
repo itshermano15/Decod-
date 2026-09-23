@@ -12,10 +12,10 @@ module.exports = async function createCheckoutSession(req, res) {
 
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const siteUrl = process.env.SITE_URL;
+  const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+  const siteUrl = process.env.SITE_URL || 'https://decodo.vercel.app';
 
-  if (!stripeKey || !supabaseUrl || !supabaseServiceKey || !siteUrl) {
+  if (!stripeKey || !supabaseUrl || !supabasePublishableKey) {
     return fail(res, 500, 'Falta configurar el pago en el servidor.');
   }
 
@@ -49,8 +49,8 @@ module.exports = async function createCheckoutSession(req, res) {
       productFilter,
     {
       headers: {
-        apikey: supabaseServiceKey,
-        Authorization: 'Bearer ' + supabaseServiceKey
+        apikey: supabasePublishableKey,
+        Authorization: 'Bearer ' + supabasePublishableKey
       }
     }
   );
